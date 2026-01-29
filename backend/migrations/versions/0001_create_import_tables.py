@@ -14,7 +14,7 @@ from app.models.pending_transaction import ReviewStatus
 
 # revision identifiers, used by Alembic.
 revision = "0001_create_import_tables"
-down_revision = None
+down_revision = "0000"
 branch_labels = None
 depends_on = None
 
