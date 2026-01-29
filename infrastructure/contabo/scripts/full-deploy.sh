@@ -13,7 +13,7 @@ REPO_URL="https://github.com/RodrigoAlmeidadeOliveira/Finance.git"
 APP_DIR="/opt/planner-financeiro"
 COMPOSE_DIR="$APP_DIR/infrastructure/contabo"
 VPS_IP="164.68.108.166"
-APP_PORT="8080"
+APP_PORT="8081"
 
 # Colors
 RED='\033[0;31m'
@@ -83,11 +83,11 @@ echo -e "${GREEN}✓ Docker $(docker --version | cut -d' ' -f3) disponível${NC}
 # ===========================================
 # PHASE 2: Open Port 8080 in Firewall
 # ===========================================
-echo -e "${YELLOW}[2/6] Abrindo porta 8080 no firewall...${NC}"
+echo -e "${YELLOW}[2/6] Abrindo porta 8081 no firewall...${NC}"
 
 if command -v ufw &> /dev/null; then
-    ufw allow 8080/tcp 2>/dev/null || true
-    echo -e "${GREEN}✓ Porta 8080 liberada${NC}"
+    ufw allow 8081/tcp 2>/dev/null || true
+    echo -e "${GREEN}✓ Porta 8081 liberada${NC}"
 else
     echo -e "${YELLOW}⚠ UFW não encontrado, verifique o firewall manualmente${NC}"
 fi
@@ -231,7 +231,7 @@ docker compose ps
 # Health checks
 echo ""
 BACKEND_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health 2>/dev/null || echo "000")
-NGINX_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/nginx-health 2>/dev/null || echo "000")
+NGINX_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8081/nginx-health 2>/dev/null || echo "000")
 
 if [ "$BACKEND_HEALTH" = "200" ]; then
     echo -e "${GREEN}✓ Backend: OK${NC}"

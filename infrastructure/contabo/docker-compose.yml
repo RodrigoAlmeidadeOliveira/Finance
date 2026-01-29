@@ -1,6 +1,6 @@
 # ===========================================
 # Planner Financeiro - Docker Compose (Contabo VPS)
-# Production configuration - Port 8080
+# Production configuration - Port 8081
 # Runs alongside Flow Forecaster (port 80)
 # ===========================================
 
@@ -70,7 +70,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-${SECRET_KEY}}
       - JWT_ACCESS_TOKEN_EXPIRES=${JWT_ACCESS_TOKEN_EXPIRES:-3600}
       - JWT_REFRESH_TOKEN_EXPIRES=${JWT_REFRESH_TOKEN_EXPIRES:-2592000}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://164.68.108.166:8080}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://164.68.108.166:8081}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
@@ -129,14 +129,14 @@ services:
       - planner-network
 
   # ===============================
-  # Nginx (Reverse Proxy - Port 8080)
+  # Nginx (Reverse Proxy - Port 8081)
   # ===============================
   planner-nginx:
     image: nginx:alpine
     container_name: planner-nginx
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8081:80"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/logs:/var/log/nginx
