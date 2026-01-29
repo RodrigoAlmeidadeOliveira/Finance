@@ -1,17 +1,19 @@
 #!/bin/bash
 # ===========================================
-# Flow Forecaster - Full Automated Deployment
-# VPS: 164.68.108.166
+# Planner Financeiro - Full Automated Deployment
+# VPS: 164.68.108.166 (Port 8080)
 # Repo: https://github.com/RodrigoAlmeidadeOliveira/Finance
+# Runs alongside Flow Forecaster (Port 80)
 # ===========================================
 
 set -e
 
 # Configuration
 REPO_URL="https://github.com/RodrigoAlmeidadeOliveira/Finance.git"
-APP_DIR="/opt/flow-forecaster"
+APP_DIR="/opt/planner-financeiro"
 COMPOSE_DIR="$APP_DIR/infrastructure/contabo"
 VPS_IP="164.68.108.166"
+APP_PORT="8080"
 
 # Colors
 RED='\033[0;31m'
@@ -22,10 +24,11 @@ NC='\033[0m'
 
 echo ""
 echo -e "${CYAN}=========================================="
-echo "  Flow Forecaster - Automated Deploy"
+echo "  Planner Financeiro - Automated Deploy"
 echo "==========================================${NC}"
 echo ""
 echo "VPS IP: $VPS_IP"
+echo "Port: $APP_PORT"
 echo "Repository: $REPO_URL"
 echo ""
 
@@ -36,117 +39,85 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # ===========================================
-# PHASE 1: System Update & Dependencies
+# PHASE 1: Check if Docker is installed
 # ===========================================
-echo -e "${YELLOW}[1/8] Atualizando sistema...${NC}"
-apt-get update && apt-get upgrade -y
+echo -e "${YELLOW}[1/6] Verificando Docker...${NC}"
 
-echo -e "${YELLOW}[2/8] Instalando dependências...${NC}"
-apt-get install -y \
-    apt-transport-https \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    git \
-    htop \
-    vim \
-    wget \
-    unzip \
-    ufw \
-    fail2ban
+if ! command -v docker &> /dev/null; then
+    echo "Docker não encontrado. Instalando..."
 
-# ===========================================
-# PHASE 2: Docker Installation
-# ===========================================
-echo -e "${YELLOW}[3/8] Instalando Docker...${NC}"
+    # Update system
+    apt-get update && apt-get upgrade -y
 
-# Remove old versions
-apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+    # Install dependencies
+    apt-get install -y \
+        apt-transport-https \
+        ca-certificates \
+        curl \
+        gnupg \
+        lsb-release \
+        git \
+        wget
 
-# Add Docker GPG key
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
+    # Add Docker GPG key
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Add Docker repository
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
+    # Add Docker repository
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Install Docker
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    # Install Docker
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# Enable Docker
-systemctl enable docker
-systemctl start docker
+    systemctl enable docker
+    systemctl start docker
+fi
 
-echo -e "${GREEN}✓ Docker $(docker --version | cut -d' ' -f3) instalado${NC}"
+echo -e "${GREEN}✓ Docker $(docker --version | cut -d' ' -f3) disponível${NC}"
 
 # ===========================================
-# PHASE 3: Firewall Configuration
+# PHASE 2: Open Port 8080 in Firewall
 # ===========================================
-echo -e "${YELLOW}[4/8] Configurando firewall...${NC}"
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow ssh
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
-echo -e "${GREEN}✓ Firewall configurado (SSH, HTTP, HTTPS)${NC}"
+echo -e "${YELLOW}[2/6] Abrindo porta 8080 no firewall...${NC}"
+
+if command -v ufw &> /dev/null; then
+    ufw allow 8080/tcp 2>/dev/null || true
+    echo -e "${GREEN}✓ Porta 8080 liberada${NC}"
+else
+    echo -e "${YELLOW}⚠ UFW não encontrado, verifique o firewall manualmente${NC}"
+fi
 
 # ===========================================
-# PHASE 4: Fail2ban Configuration
+# PHASE 3: Clone Repository
 # ===========================================
-echo -e "${YELLOW}[5/8] Configurando Fail2ban...${NC}"
-cat > /etc/fail2ban/jail.local <<EOF
-[DEFAULT]
-bantime = 1h
-findtime = 10m
-maxretry = 5
-
-[sshd]
-enabled = true
-port = ssh
-filter = sshd
-logpath = /var/log/auth.log
-maxretry = 3
-bantime = 24h
-EOF
-
-systemctl enable fail2ban
-systemctl restart fail2ban
-echo -e "${GREEN}✓ Fail2ban configurado${NC}"
-
-# ===========================================
-# PHASE 5: Clone Repository
-# ===========================================
-echo -e "${YELLOW}[6/8] Clonando repositório...${NC}"
+echo -e "${YELLOW}[3/6] Clonando repositório...${NC}"
 
 # Create directories
 mkdir -p "$APP_DIR"
-mkdir -p /opt/backups
+mkdir -p /opt/backups/planner
 
-# Clone
+# Clone or update
 if [ -d "$APP_DIR/.git" ]; then
     echo "Repositório já existe, atualizando..."
     cd "$APP_DIR"
-    git pull origin main
+    git fetch origin
+    git reset --hard origin/main
 else
     git clone "$REPO_URL" "$APP_DIR"
 fi
 
 cd "$APP_DIR"
-echo -e "${GREEN}✓ Repositório clonado${NC}"
+echo -e "${GREEN}✓ Repositório clonado em $APP_DIR${NC}"
 
 # ===========================================
-# PHASE 6: Generate Secrets & Configure .env
+# PHASE 4: Generate Secrets & Configure .env
 # ===========================================
-echo -e "${YELLOW}[7/8] Configurando ambiente...${NC}"
+echo -e "${YELLOW}[4/6] Configurando ambiente...${NC}"
 
 cd "$COMPOSE_DIR"
 
@@ -158,14 +129,14 @@ JWT_SECRET=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
 # Create .env file
 cat > .env <<EOF
 # ===========================================
-# Flow Forecaster - Production Environment
+# Planner Financeiro - Production Environment
 # Generated: $(date)
 # ===========================================
 
 # PostgreSQL Database
-POSTGRES_USER=forecaster
+POSTGRES_USER=planner
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-POSTGRES_DB=flow_forecaster
+POSTGRES_DB=planner_financeiro
 
 # Application Security
 SECRET_KEY=$SECRET_KEY
@@ -173,15 +144,15 @@ JWT_SECRET_KEY=$JWT_SECRET
 JWT_ACCESS_TOKEN_EXPIRES=3600
 JWT_REFRESH_TOKEN_EXPIRES=2592000
 
-# CORS (IP access)
-CORS_ORIGINS=http://$VPS_IP,http://localhost
+# CORS (IP access with port 8080)
+CORS_ORIGINS=http://$VPS_IP:$APP_PORT,http://localhost:$APP_PORT
 
 # OpenAI (optional)
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-3.5-turbo
 
-# Gunicorn
-GUNICORN_WORKERS=4
+# Gunicorn (reduced for shared VPS)
+GUNICORN_WORKERS=2
 GUNICORN_THREADS=2
 
 # Logging
@@ -189,45 +160,42 @@ LOG_LEVEL=INFO
 EOF
 
 # Save credentials to a secure file
-cat > /root/flow-forecaster-credentials.txt <<EOF
+cat > /root/planner-financeiro-credentials.txt <<EOF
 ===========================================
-Flow Forecaster - Credenciais
+Planner Financeiro - Credenciais
 Gerado em: $(date)
 ===========================================
 
 VPS IP: $VPS_IP
-URL: http://$VPS_IP
+URL: http://$VPS_IP:$APP_PORT
 
 PostgreSQL:
-  Host: localhost:5432
-  User: forecaster
+  Host: localhost:5433 (interno)
+  User: planner
   Password: $POSTGRES_PASSWORD
-  Database: flow_forecaster
+  Database: planner_financeiro
 
 SECRET_KEY: $SECRET_KEY
 JWT_SECRET_KEY: $JWT_SECRET
 
 Comandos úteis:
-  cd /opt/flow-forecaster/infrastructure/contabo
+  cd $COMPOSE_DIR
   docker compose ps
   docker compose logs -f
   docker compose restart
+
+Backup:
+  ./scripts/backup.sh
 EOF
 
-chmod 600 /root/flow-forecaster-credentials.txt
+chmod 600 /root/planner-financeiro-credentials.txt
 echo -e "${GREEN}✓ Ambiente configurado${NC}"
-echo -e "${CYAN}  Credenciais salvas em: /root/flow-forecaster-credentials.txt${NC}"
+echo -e "${CYAN}  Credenciais salvas em: /root/planner-financeiro-credentials.txt${NC}"
 
 # ===========================================
-# PHASE 7: Update Nginx for IP Access
+# PHASE 5: Build and Start
 # ===========================================
-# Update nginx config for IP access
-sed -i "s/server_name localhost;/server_name $VPS_IP;/" nginx/conf.d/flow-forecaster.conf
-
-# ===========================================
-# PHASE 8: Build and Start
-# ===========================================
-echo -e "${YELLOW}[8/8] Construindo e iniciando containers...${NC}"
+echo -e "${YELLOW}[5/6] Construindo e iniciando containers...${NC}"
 
 # Make scripts executable
 chmod +x scripts/*.sh
@@ -246,13 +214,13 @@ sleep 15
 
 # Run migrations
 echo "Executando migrações..."
-docker exec flow-forecaster-app flask db upgrade 2>/dev/null || echo "Migrações executadas ou não necessárias"
+docker exec planner-backend flask db upgrade 2>/dev/null || echo "Migrações executadas ou não necessárias"
 
 # ===========================================
-# HEALTH CHECK
+# PHASE 6: Health Check
 # ===========================================
 echo ""
-echo -e "${CYAN}Verificando saúde dos serviços...${NC}"
+echo -e "${CYAN}[6/6] Verificando saúde dos serviços...${NC}"
 sleep 10
 
 # Check containers
@@ -262,8 +230,8 @@ docker compose ps
 
 # Health checks
 echo ""
-BACKEND_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
-NGINX_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/nginx-health 2>/dev/null || echo "000")
+BACKEND_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health 2>/dev/null || echo "000")
+NGINX_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/nginx-health 2>/dev/null || echo "000")
 
 if [ "$BACKEND_HEALTH" = "200" ]; then
     echo -e "${GREEN}✓ Backend: OK${NC}"
@@ -281,7 +249,7 @@ fi
 # SETUP BACKUP CRON
 # ===========================================
 BACKUP_SCRIPT="$COMPOSE_DIR/scripts/backup.sh"
-CRON_JOB="0 2 * * * $BACKUP_SCRIPT >> /var/log/flow-forecaster-backup.log 2>&1"
+CRON_JOB="0 3 * * * $BACKUP_SCRIPT >> /var/log/planner-backup.log 2>&1"
 (crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT"; echo "$CRON_JOB") | crontab -
 
 # ===========================================
@@ -292,10 +260,10 @@ echo -e "${GREEN}=========================================="
 echo "  ✅ DEPLOY COMPLETO!"
 echo "==========================================${NC}"
 echo ""
-echo -e "🌐 Acesse: ${CYAN}http://$VPS_IP${NC}"
+echo -e "🌐 Acesse: ${CYAN}http://$VPS_IP:$APP_PORT${NC}"
 echo ""
 echo "Credenciais salvas em:"
-echo "  /root/flow-forecaster-credentials.txt"
+echo "  /root/planner-financeiro-credentials.txt"
 echo ""
 echo "Comandos úteis:"
 echo "  cd $COMPOSE_DIR"

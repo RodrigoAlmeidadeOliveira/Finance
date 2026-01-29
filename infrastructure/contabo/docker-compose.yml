@@ -1,6 +1,7 @@
 # ===========================================
-# Flow Forecaster - Docker Compose (Contabo VPS)
-# Production configuration
+# Planner Financeiro - Docker Compose (Contabo VPS)
+# Production configuration - Port 8080
+# Runs alongside Flow Forecaster (port 80)
 # ===========================================
 
 version: '3.8'
@@ -9,81 +10,81 @@ services:
   # ===============================
   # PostgreSQL Database
   # ===============================
-  postgres:
+  planner-postgres:
     image: postgres:15-alpine
-    container_name: forecaster-postgres
+    container_name: planner-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-forecaster}
+      POSTGRES_USER: ${POSTGRES_USER:-planner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:-flow_forecaster}
+      POSTGRES_DB: ${POSTGRES_DB:-planner_financeiro}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - planner_postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d:ro
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forecaster} -d ${POSTGRES_DB:-flow_forecaster}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-planner} -d ${POSTGRES_DB:-planner_financeiro}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - flow-network
+      - planner-network
 
   # ===============================
   # Redis (Cache, Sessions, Rate Limiting)
   # ===============================
-  redis:
+  planner-redis:
     image: redis:7-alpine
-    container_name: forecaster-redis
+    container_name: planner-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - planner_redis_data:/data
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - flow-network
+      - planner-network
 
   # ===============================
-  # Flow Forecaster Backend (Flask)
+  # Planner Financeiro Backend (Flask)
   # ===============================
-  flow-forecaster:
+  planner-backend:
     build:
       context: ../../backend
       dockerfile: Dockerfile
-    container_name: flow-forecaster-app
+    container_name: planner-backend
     restart: unless-stopped
     environment:
       - FLASK_APP=app
       - FLASK_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-forecaster}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flow_forecaster}
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-planner}:${POSTGRES_PASSWORD}@planner-postgres:5432/${POSTGRES_DB:-planner_financeiro}
+      - REDIS_URL=redis://planner-redis:6379/0
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-${SECRET_KEY}}
       - JWT_ACCESS_TOKEN_EXPIRES=${JWT_ACCESS_TOKEN_EXPIRES:-3600}
       - JWT_REFRESH_TOKEN_EXPIRES=${JWT_REFRESH_TOKEN_EXPIRES:-2592000}
-      - CORS_ORIGINS=${CORS_ORIGINS:-https://yourdomain.com}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://164.68.108.166:8080}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
-      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
       - GUNICORN_THREADS=${GUNICORN_THREADS:-2}
     volumes:
-      - app_uploads:/app/uploads
-      - app_logs:/app/logs
-      - ml_models:/app/ml/models
+      - planner_uploads:/app/uploads
+      - planner_logs:/app/logs
+      - planner_ml_models:/app/ml/models
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8000"
     depends_on:
-      postgres:
+      planner-postgres:
         condition: service_healthy
-      redis:
+      planner-redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -94,7 +95,7 @@ services:
     command: >
       gunicorn
       --bind 0.0.0.0:8000
-      --workers ${GUNICORN_WORKERS:-4}
+      --workers ${GUNICORN_WORKERS:-2}
       --threads ${GUNICORN_THREADS:-2}
       --worker-class gthread
       --timeout 120
@@ -104,130 +105,128 @@ services:
       --enable-stdio-inheritance
       "app:create_app()"
     networks:
-      - flow-network
+      - planner-network
 
   # ===============================
-  # Flow Forecaster Frontend (React/Vite)
+  # Planner Financeiro Frontend (React/Vite)
   # ===============================
-  frontend:
+  planner-frontend:
     build:
       context: ../../frontend
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=/api
-    container_name: flow-forecaster-frontend
+    container_name: planner-frontend
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3001:80"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
-      - flow-network
+      - planner-network
 
   # ===============================
-  # Nginx (Reverse Proxy + SSL)
+  # Nginx (Reverse Proxy - Port 8080)
   # ===============================
-  nginx:
+  planner-nginx:
     image: nginx:alpine
-    container_name: forecaster-nginx
+    container_name: planner-nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/logs:/var/log/nginx
     depends_on:
-      - flow-forecaster
-      - frontend
+      - planner-backend
+      - planner-frontend
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/nginx-health"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
-      - flow-network
+      - planner-network
 
   # ===============================
   # Celery Worker (Background Tasks)
   # ===============================
-  celery-worker:
+  planner-celery-worker:
     build:
       context: ../../backend
       dockerfile: Dockerfile
-    container_name: forecaster-celery-worker
+    container_name: planner-celery-worker
     restart: unless-stopped
     environment:
       - FLASK_APP=app
       - FLASK_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-forecaster}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flow_forecaster}
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-planner}:${POSTGRES_PASSWORD}@planner-postgres:5432/${POSTGRES_DB:-planner_financeiro}
+      - REDIS_URL=redis://planner-redis:6379/0
+      - CELERY_BROKER_URL=redis://planner-redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://planner-redis:6379/1
       - SECRET_KEY=${SECRET_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
-      - app_uploads:/app/uploads
-      - app_logs:/app/logs
-      - ml_models:/app/ml/models
+      - planner_uploads:/app/uploads
+      - planner_logs:/app/logs
+      - planner_ml_models:/app/ml/models
     depends_on:
-      postgres:
+      planner-postgres:
         condition: service_healthy
-      redis:
+      planner-redis:
         condition: service_healthy
     command: celery -A celery_app worker --loglevel=info --concurrency=2
     networks:
-      - flow-network
+      - planner-network
 
   # ===============================
   # Celery Beat (Scheduled Tasks)
   # ===============================
-  celery-beat:
+  planner-celery-beat:
     build:
       context: ../../backend
       dockerfile: Dockerfile
-    container_name: forecaster-celery-beat
+    container_name: planner-celery-beat
     restart: unless-stopped
     environment:
       - FLASK_APP=app
       - FLASK_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-forecaster}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-flow_forecaster}
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-planner}:${POSTGRES_PASSWORD}@planner-postgres:5432/${POSTGRES_DB:-planner_financeiro}
+      - REDIS_URL=redis://planner-redis:6379/0
+      - CELERY_BROKER_URL=redis://planner-redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://planner-redis:6379/1
       - SECRET_KEY=${SECRET_KEY}
     volumes:
-      - celery_beat_schedule:/app/celerybeat
+      - planner_celery_schedule:/app/celerybeat
     depends_on:
-      - celery-worker
+      - planner-celery-worker
     command: celery -A celery_app beat --loglevel=info --schedule=/app/celerybeat/celerybeat-schedule
     networks:
-      - flow-network
+      - planner-network
 
 # ===============================
 # Networks
 # ===============================
 networks:
-  flow-network:
+  planner-network:
     driver: bridge
 
 # ===============================
 # Volumes
 # ===============================
 volumes:
-  postgres_data:
+  planner_postgres_data:
     driver: local
-  redis_data:
+  planner_redis_data:
     driver: local
-  app_uploads:
+  planner_uploads:
     driver: local
-  app_logs:
+  planner_logs:
     driver: local
-  ml_models:
+  planner_ml_models:
     driver: local
-  celery_beat_schedule:
+  planner_celery_schedule:
     driver: local

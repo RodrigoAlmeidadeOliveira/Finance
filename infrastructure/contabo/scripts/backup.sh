@@ -1,14 +1,14 @@
 #!/bin/bash
 # ===========================================
-# Flow Forecaster - Backup Script
+# Planner Financeiro - Backup Script
 # Backs up database and important files
 # ===========================================
 
 set -e
 
 # Configuration
-BACKUP_DIR="/opt/backups"
-COMPOSE_DIR="/opt/flow-forecaster/infrastructure/contabo"
+BACKUP_DIR="/opt/backups/planner"
+COMPOSE_DIR="/opt/planner-financeiro/infrastructure/contabo"
 DATE=$(date +%Y%m%d_%H%M%S)
 RETENTION_DAYS=30
 
@@ -19,7 +19,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo "=========================================="
-echo "Flow Forecaster Backup - $DATE"
+echo "Planner Financeiro Backup - $DATE"
 echo "=========================================="
 
 # Create backup directory
@@ -30,14 +30,14 @@ if [ -f "$COMPOSE_DIR/.env" ]; then
     source "$COMPOSE_DIR/.env"
 fi
 
-POSTGRES_USER=${POSTGRES_USER:-forecaster}
-POSTGRES_DB=${POSTGRES_DB:-flow_forecaster}
+POSTGRES_USER=${POSTGRES_USER:-planner}
+POSTGRES_DB=${POSTGRES_DB:-planner_financeiro}
 
 echo -e "${YELLOW}[1/4] Backing up PostgreSQL database...${NC}"
 # Database backup
 DB_BACKUP_FILE="$BACKUP_DIR/${POSTGRES_DB}_${DATE}.sql.gz"
 
-docker exec forecaster-postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" | gzip > "$DB_BACKUP_FILE"
+docker exec planner-postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" | gzip > "$DB_BACKUP_FILE"
 
 if [ -f "$DB_BACKUP_FILE" ]; then
     SIZE=$(ls -lh "$DB_BACKUP_FILE" | awk '{print $5}')
@@ -52,9 +52,9 @@ echo -e "${YELLOW}[2/4] Backing up uploaded files...${NC}"
 UPLOADS_BACKUP_FILE="$BACKUP_DIR/uploads_${DATE}.tar.gz"
 
 # Check if uploads volume has data
-if docker volume inspect flow-forecaster_app_uploads >/dev/null 2>&1; then
+if docker volume inspect contabo_planner_uploads >/dev/null 2>&1; then
     docker run --rm \
-        -v flow-forecaster_app_uploads:/data:ro \
+        -v contabo_planner_uploads:/data:ro \
         -v "$BACKUP_DIR":/backup \
         alpine tar czf "/backup/uploads_${DATE}.tar.gz" -C /data .
 
@@ -70,9 +70,9 @@ echo -e "${YELLOW}[3/4] Backing up ML models...${NC}"
 # ML Models backup
 MODELS_BACKUP_FILE="$BACKUP_DIR/ml_models_${DATE}.tar.gz"
 
-if docker volume inspect flow-forecaster_ml_models >/dev/null 2>&1; then
+if docker volume inspect contabo_planner_ml_models >/dev/null 2>&1; then
     docker run --rm \
-        -v flow-forecaster_ml_models:/data:ro \
+        -v contabo_planner_ml_models:/data:ro \
         -v "$BACKUP_DIR":/backup \
         alpine tar czf "/backup/ml_models_${DATE}.tar.gz" -C /data .
 
