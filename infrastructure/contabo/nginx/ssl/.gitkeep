@@ -1,0 +1,4 @@
+# SSL certificates will be placed here after Let's Encrypt setup
+# Files:
+#   - fullchain.pem
+#   - privkey.pem

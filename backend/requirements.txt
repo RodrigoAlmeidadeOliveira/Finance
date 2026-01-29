@@ -51,3 +51,7 @@ mypy==1.7.1
 
 # Production Server
 gunicorn==21.2.0
+
+# Background Tasks & Caching
+celery==5.3.4
+redis==5.0.1
